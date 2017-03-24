@@ -65,7 +65,7 @@ uint8_t gLPowerEnable=1;
 
 uint8_t peakCurrentControl=0x02;
 uint8_t gPWMControl=0x04;
-uint8_t gSleepDelay=5;
+uint8_t gSleepDelay=4;
 
 uint8_t gSleep=0;
 

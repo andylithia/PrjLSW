@@ -17,7 +17,9 @@ extern menu_t menu_l2_apps;
 extern uint8_t peakCurrentControl;
 extern uint8_t gPWMControl;
 extern uint8_t gSleepDelay;
-uint8_t configTmpVar;
+extern int gSleepDelayActual;
+
+static uint8_t configTmpVar;
 
 static uint8_t currentEntry=0;
 static uint8_t state=0;
@@ -79,33 +81,30 @@ menu_t menu_l3_config={
 };
 
 void resetScroll(void);
+// Callbacks
 void configIntensityCallback(void);
+void configScrTimeoutCallback(void);
 
 configEntry_t configEntryList[]={
 	{"Intensity   ", 3, &gPWMControl, CFG_ZERO_DISABLE|CFG_0F, &configIntensityCallback},
-	{"ScrTimeout  ", 3, &gSleepDelay, CFG_ZERO_DISABLE|CFG_0099, NULL},
+	{"ScrTimeout  ", 3, &gSleepDelay, CFG_ZERO_DISABLE|CFG_0099, &configScrTimeoutCallback},
 	{"aTrigger", 2, NULL, CFG_ZERO_ENABLE|CFG_0F, NULL},
 	{"aWakeup ", 2, NULL, CFG_ZERO_ENABLE|CFG_YN, NULL},
 	{"AutoSave", 2, NULL, CFG_ZERO_ENABLE|CFG_YN, NULL}
 };
 
-uint8_t configEntryCount=sizeof(configEntryList)/sizeof(configEntry_t);
-uint8_t configMenuPos=0;
+const  uint8_t configEntryCount=sizeof(configEntryList)/sizeof(configEntry_t);
 
 void menu_l3_config_enter(void* arg){
 	HCMS29xx_VirtualBuffer_SetShadePattern(gVirtualBuffer, 4, 0xFF);
 	HCMS29xx_VirtualBuffer_StringBuilder(configEntryList[currentEntry].name,4,gVirtualBuffer);
-	configTmpVar=gPWMControl;
+	configTmpVar=*(configEntryList[currentEntry].instancep);
 }
-void menu_l3_config_exit(void* arg){
-	HCMS29xx_SendCWR((0x1<<6)|(peakCurrentControl<<4)|gPWMControl);
 
-	scrollSegmentPointer=0;
-	scrollDelayCounter=0;
-	scrollCounter=0;
-	scrollFlag=0;
-	scrollShiftCount=4*8;
+void menu_l3_config_exit(void* arg){
+	resetScroll();
 }
+
 void menu_l3_config_k3(void* arg){
 	// +
 	if(state){
@@ -128,6 +127,7 @@ void menu_l3_config_k3(void* arg){
 		
 	}
 }
+
 void menu_l3_config_k4(void* arg){
 	// SEL
 	if(state){
@@ -146,6 +146,7 @@ void menu_l3_config_k4(void* arg){
 		configTmpVar=*(configEntryList[currentEntry].instancep);
 	}
 }
+
 void menu_l3_config_k5(void* arg){
 	// BACK
 	if(state){
@@ -155,9 +156,11 @@ void menu_l3_config_k5(void* arg){
 		HCMS29xx_VirtualBuffer_StringBuilder(configEntryList[currentEntry].name,4,gVirtualBuffer);
 	}
 	else
+		if(currentEntry!=0) currentEntry=0;
 		// Return to apps menu
-		currentMenu=menu_enter(currentMenu, &menu_l2_apps, 0, 0);
+		else currentMenu=menu_enter(currentMenu, &menu_l2_apps, 0, 0);
 }
+
 void menu_l3_config_k6(void* arg){
 	if(state){
 		// -1
@@ -184,6 +187,7 @@ void menu_l3_config_k6(void* arg){
 		HCMS29xx_VirtualBuffer_StringBuilder(configEntryList[currentEntry].name,4,gVirtualBuffer);
 	}
 }
+
 void menu_l3_config_loop(void* arg){
 	if(state){
 		switch(configEntryList[currentEntry].rangeType&0x0E){
@@ -238,4 +242,9 @@ void resetScroll(void){
 void configIntensityCallback(void){
 	HCMS29xx_SendCWR((0x1<<6)|(peakCurrentControl<<4)|configTmpVar);
 	gPWMControl=configTmpVar;
+}
+
+void configScrTimeoutCallback(void){
+	// *64
+	gSleepDelayActual=((int)gSleepDelay)<<6;
 }

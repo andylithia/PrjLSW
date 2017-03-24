@@ -46,15 +46,18 @@ extern uint8_t gVirtualBuffer[4*9];
 extern menu_t* currentMenu;
 
 extern uint8_t gSleep;
+extern uint8_t peakCurrentControl;
+extern uint8_t gPWMControl;
 extern uint8_t gSleepDelay;
+int gSleepDelayActual=500;
 
 extern int gShadeEnable;
 extern uint8_t MFA_allowInterrupt;
 uint8_t testFSM=0;
 
 uint8_t keyStateMap=0;
-int sleepDelayActual=500;
 int counter=0;
+int dimoutPWMControl=0;
 /* USER CODE END 0 */
 
 /* External variables --------------------------------------------------------*/
@@ -189,14 +192,31 @@ void EXTI4_15_IRQHandler(void)
 * @brief This function handles TIM21 global interrupt.
 */
 void TIM21_IRQHandler(void){
-	if(counter>sleepDelayActual){
-		gSleep=1;
-		HAL_TIM_Base_Stop_IT(&htim21);
-		HCMS29xx_VirtualBuffer_StringBuilder("    ", 4, gVirtualBuffer);
-	}
-	else
-		counter++;
+
   /* USER CODE BEGIN TIM21_IRQn 0 */
+	if(counter>gSleepDelayActual){
+		if(!gSleep){
+			gSleep=1;
+			dimoutPWMControl=gPWMControl;
+		}
+		else {		
+			if(!(counter&0x03)){
+				if(dimoutPWMControl>0){
+					// dim out display
+					HCMS29xx_SendCWR((0x1<<6)|(peakCurrentControl<<4)|dimoutPWMControl);
+					dimoutPWMControl--;
+				}
+				else {
+					HCMS29xx_SendCWR(0x00);
+					HAL_TIM_Base_Stop_IT(&htim21);
+					__HAL_RCC_GPIOA_CLK_SLEEP_ENABLE();
+					__HAL_RCC_GPIOC_CLK_SLEEP_ENABLE();
+				}
+			}
+		}
+	}
+	counter++;
+	
 	if(!testFSM){
 		HCMS29xx_VirtualBuffer_2Physical(gVirtualBuffer, testBuffer, 0, 0);
 		// Key Scan
@@ -252,10 +272,10 @@ void TIM21_IRQHandler(void){
 	}
 	else{
 		if(gShadeEnable){
-			HCMS29xx_VirtualBuffer_2Physical(gVirtualBuffer, testBuffer, 0, 3);
-			HCMS29xx_SendMultiple(testBuffer, 20);
 			testFSM=!testFSM;
 			htim21.Instance->ARR=10;
+			HCMS29xx_VirtualBuffer_2Physical(gVirtualBuffer, testBuffer, 0, 3);
+			HCMS29xx_SendMultiple(testBuffer, 20);
 		}
 		else {
 			testFSM=0;
@@ -287,16 +307,27 @@ void TIM22_IRQHandler(void)
 
 /* USER CODE BEGIN 1 */
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
+	counter=0;
 	if(gSleep){
-		// Restore buffer
-		HCMS29xx_VirtualBuffer_2Physical(gVirtualBuffer, testBuffer, 0, 0);
-		HCMS29xx_SendMultiple(testBuffer, 20);
+		// Restore screen
+		__HAL_RCC_GPIOA_CLK_SLEEP_DISABLE();
+		__HAL_RCC_GPIOC_CLK_SLEEP_DISABLE();
+		HCMS29xx_SendCWR((0x1<<6)|(peakCurrentControl<<4)|gPWMControl);
 		// Restore timer
 		gSleep=0;
 		htim21.Instance->ARR=20;
-		sleepDelayActual=((int)gSleepDelay)<<7;
 		HAL_TIM_Base_Start_IT(&htim21);
-		counter=0;
+		
+		// Dummy Key Scan
+		if((BTN3_GPIO_Port->IDR & BTN3_Pin))
+			keyStateMap|=(1<<3);
+		if((BTN4_GPIO_Port->IDR & BTN4_Pin))
+			keyStateMap|=(1<<4);
+		if((BTN5_GPIO_Port->IDR & BTN5_Pin))
+			keyStateMap|=(1<<5);
+		if((BTN6_GPIO_Port->IDR & BTN6_Pin))
+			keyStateMap|=(1<<6);
+		
 	}
 		
 }
