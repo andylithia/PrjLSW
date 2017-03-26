@@ -4,9 +4,10 @@
 #define MM_UINT16_DECODE_DATA(num, arr)	arr[0] = num & 0xF;\
 										arr[1] = (num >> 4) & 0xF;\
 										arr[2] = (num >> 8) & 0xF;\
-										arr[3] = (num >> 12);
+										arr[3] = num >> 12;
 
 #define MM_MAX_QUERY_COUNT 10
+//#define 
 //extern uint8_t testBuffer[4 * 8];
 extern m_HCMS29xx_VirtualBuffer_Create(gVirtualBuffer, 8);
 
@@ -31,6 +32,8 @@ const unsigned char MM_Font[] = {
 	0x22, 0x14, 0x08, 0x14, 0x22,	//15-cross/no
 };
 
+const char MM_Banner[] = {'M', 'a', 's', 't', 'e', 'r', 'M', 'i', 'n', 'd', '!', ' ', ' ', ' ', ' ', ' '};
+
 extern int gShadeEnable;
 extern menu_t *currentMenu;
 extern menu_t menu_l2_apps;
@@ -45,11 +48,14 @@ typedef struct {
 	uint8_t Year, Month, Day, WeekDay;
 } RTC_DateTypeDef;
 #define RTC_FORMAT_BIN 0
+uint32_t HAL_GetTick(void);
+#else
+#include "stm32l0xx_hal.h"
 #endif // VC_TEST
 
-extern RTC_HandleTypeDef hrtc;
-extern RTC_TimeTypeDef gtime;
-extern RTC_DateTypeDef gdate;
+//extern RTC_HandleTypeDef hrtc;
+//extern RTC_TimeTypeDef gtime;
+//extern RTC_DateTypeDef gdate;
 
 uint16_t	MM_answer;						//compressed answer
 uint16_t	MM_query[MM_MAX_QUERY_COUNT];	//compressed queries
@@ -58,18 +64,20 @@ uint8_t		MM_count = 0x80;				//guess count 128 or 0 : gameover
 
 uint8_t		MM_state = 0x00;
 uint16_t	MM_counter = 0;
+//uint8_t		MM_midcounter = 0;
 
 //States:
 //b00 0000 00 = welcome //MstM						ok
 //b00 0001 00 = history; counter = historylevel		ok
 //b00 0010 00 = correct answer is xxx				ok
 //b00 0011 xx = input number digit select			ok
-//b10 0001 1x = (blinking) LD yes/no  (loadgame)		ok
+//b10 0001 1x = (blinking) LD yes/no  (loadgame)	ok
 //b10 0000 xx = (blinking) input number				ok
 //b10 0010 xx = (blinking) ? history(144)/ok/exit  (game menu)(123)  hist/ok/reset/exit		ok
 //b10 1011 00 = (blinking) Win!						ok
 //b10 1111 00 = (blinking) Lose						ok
-//b10 1001 1x = (blinking) New ok/no  (new/exit)		ok
+//b10 1001 1x = (blinking) New ok/no  (new/exit)	ok
+//b10 1000 1x = (blinking) New ok/no  (new/back)	ok
 
 mfa_t mfa_l3_mastermind = {
 	NULL,
@@ -85,21 +93,20 @@ mfa_t mfa_l3_mastermind = {
 	NULL,
 	NULL
 };
-
 menu_t menu_l3_mastermind = {
-	233, //TODO 给个ID
+	233, //TODO Add a ID
 	3,
 	NULL,
 	&mfa_l3_mastermind
 };
 
-uint8_t mm_checkInvalid(uint16_t number) {
+uint8_t mm_checkValid(uint16_t number) {
 	uint8_t numArr[4];
 	MM_UINT16_DECODE_DATA(number, numArr);
 
-	return numArr[0] ^ numArr[1] || numArr[0] ^ numArr[2] || numArr[0] ^ numArr[3] || \
-		numArr[1] ^ numArr[2] || numArr[1] ^ numArr[3] || \
-		numArr[2] ^ numArr[3];
+	return (numArr[0] ^ numArr[1]) && (numArr[0] ^ numArr[2]) && (numArr[0] ^ numArr[3]) && \
+		(numArr[1] ^ numArr[2]) && (numArr[1] ^ numArr[3]) && \
+		(numArr[2] ^ numArr[3]);
 }
 uint8_t mm_getRet(uint16_t number) {
 	uint8_t ret = 0;//ret:low4bit=number high4bit=position
@@ -110,30 +117,29 @@ uint8_t mm_getRet(uint16_t number) {
 		for (uint8_t j = 0; j < 4; j++) {
 			if (!(numArr[i] ^ ansArr[j])) {// ==
 				if (i^j) {// i != j -> num
-					ret += 0x0001;
+					ret += 0x01;
 				} else {
-					ret += 0x0100;
+					ret += 0x10;
 				}
 			}
 		}
 	}
 	return ret;
 }
+
 void menu_l3_mastermind_enter(void* arg) {
 	MM_state = 0x00;
-	MM_counter = 0x00E0;
+	MM_counter = 0xFFFF;
 	gShadeEnable = 0;
 	//show lbl
-	HCMS29xx_VirtualBuffer_StringBuilder("MstrMind", 8, gVirtualBuffer);
+	HCMS29xx_VirtualBuffer_StringBuilder((char *)MM_Banner + 12, 4, gVirtualBuffer);//TODO Dangerous!
 }
 void menu_l3_mastermind_exit(void* arg) {
 	gShadeEnable = 0;
 }
 
-#pragma region Key Events
-
-void menu_l3_mastermind_k3(void* arg) {//3 +
-	mm_keyProcesser(3); 
+void menu_l3_mastermind_k3(void* arg) {//2 -
+	mm_keyProcesser(2);
 }
 void menu_l3_mastermind_k4(void* arg) {//1 ok
 	mm_keyProcesser(1);
@@ -141,42 +147,33 @@ void menu_l3_mastermind_k4(void* arg) {//1 ok
 void menu_l3_mastermind_k5(void* arg) {//0 back
 	mm_keyProcesser(0);
 }
-void menu_l3_mastermind_k6(void* arg) {//2 -
-	mm_keyProcesser(2);
+void menu_l3_mastermind_k6(void* arg) {//3 +
+	mm_keyProcesser(3);
 }
-
-#pragma endregion
 
 void menu_l3_mastermind_refresh(void* arg) {
 	if (MM_state & 0x80) {//flash(blink)
-		MM_counter = (MM_counter + 1) & 0x00FF;
-		if (!(MM_counter & 0x000F)) {//b xxxx0000 reverse
-			if (MM_counter & 0x0010) {//dim
+		MM_counter = (MM_counter + 1) & 0x0FFF;
+		if (!(MM_counter & 0x00FF)) {//b 00000000 xxxxxxxx reverse
+			if (MM_counter & 0x0100) {//dim
 				if (~MM_state & 0x2C) {//others
 					HCMS29xx_VirtualBuffer_StringBuilder(" ", 1, gVirtualBuffer + 9 * (MM_state & 0x03));
 				} else {//win/lose
 					HCMS29xx_VirtualBuffer_StringBuilder("    ", 4, gVirtualBuffer);
 				}
 			} else {//light
-				uint8_t charindex, charpos;
+				uint8_t charindex, charpos = MM_state & 0x03;
 				switch (MM_state & 0x3C) {
 				case 0x00://in number
-					charpos = MM_state & 0x03;
+					
 					charindex = (MM_query[MM_count] >> (charpos << 2)) & 0xF;
 					break;
-				case 0x04: case 0x24://? ok/no
-					charpos = MM_state & 0x03;
+				case 0x04: case 0x24: case 0x20://? ok/no
+					
 					charindex = (charpos << 1) + 9;
 					break;
 				case 0x08://new:hist/ok/reset/exit
-					/*if (MM_state & 0x02) {
-						HCMS29xx_fetchChar(144, gVirtualBuffer + 9);
-						return;
-					} else {
-						charpos = MM_state & 0x03;
-						charindex = (charpos << 1) | 0x08;
-					}*/
-					charpos = MM_state & 0x03;
+
 					charindex = 12 + charpos;
 					break;
 				case 0x2C://win
@@ -184,25 +181,23 @@ void menu_l3_mastermind_refresh(void* arg) {
 					return;
 				case 0x3C://lose
 					HCMS29xx_VirtualBuffer_StringBuilder("Lose", 4, gVirtualBuffer);
-					return;
-				default:
-					return;
+					//return;
+				default:;
 				}
 				//write vbuffer
-				mm_writeBuffer(charpos, charindex, 1);
+				mm_writeBuffer(charpos, charindex);
 			}
 		}
 
 	} else if (!MM_state) {//00 0000 00 - welcome
-		//counter = 4	1 pixel
-		//counter = 32	1 char(about 0.5s)
-		MM_counter++;
-		if ((MM_counter & 0x0100) && !(MM_counter & 0x03)) {//counter % 4 == 0
-			//scroll
-			HCMS29xx_VirtualBuffer_LeftShift(gVirtualBuffer, 1);
-		} else if (!(MM_counter ^ 0x0220)) {
-			//go next state
-			menu_l3_mastermind_k4(NULL);
+		MM_counter = (MM_counter + 1) & 0x1FFF;
+
+		if (!(MM_counter & 0x003F)) {
+			if (!(MM_counter & 0x07FF)) {
+				HCMS29xx_VirtualBuffer_StringBuilder((char *)MM_Banner + (MM_counter >> 9), 4, gVirtualBuffer + 36);//TODO Dangerous!
+			}
+
+			HCMS29xx_VirtualBuffer_LeftShift(gVirtualBuffer, 8);
 		}
 	}
 }
@@ -213,29 +208,17 @@ void mm_keyProcesser(uint8_t key) {
 	case 0x00://welc
 		if (!key) {//back - quit
 			currentMenu = menu_enter(currentMenu, &menu_l2_apps, NULL, NULL);
+			return;
 		}
 		//check saved game
-		/*
-		if (count & 0x80) {//new
-			mm_newGame();
-		} else {//saved
-			gShadeEnable = 1;
-			HCMS29xx_VirtualBuffer_StringBuilder("L?", 2, gVirtualBuffer);
-			mm_writeBuffer(2, 13); mm_writeBuffer(3, 15);
-			HCMS29xx_VirtualBuffer_SetShadePattern(gVirtualBuffer, 4, 0x8);//hl selection
-			MM_counter = 0;
-			MM_state = 0x86;
-		}
-		*/
-
 		//NEW: treat 0 as not-saved
 		if (MM_count & 0x7F) {//saved
+			MM_state = 0x86;
+			MM_counter = 0;
 			gShadeEnable = 1;
 			HCMS29xx_VirtualBuffer_StringBuilder("L?", 2, gVirtualBuffer);
 			mm_writeBuffer(2, 13); mm_writeBuffer(3, 15);
-			HCMS29xx_VirtualBuffer_SetShadePattern(gVirtualBuffer, 4, 0x8);//hl selection
-			MM_counter = 0;
-			MM_state = 0x86;
+			HCMS29xx_VirtualBuffer_SetShadePattern(gVirtualBuffer, 4, 0x7);//hl selection
 		} else {//not saved
 			mm_newGame();
 		}
@@ -247,82 +230,92 @@ void mm_keyProcesser(uint8_t key) {
 		} else if (key & 0x2) {//selc
 			mm_itemselector(key, 1);
 		} else {
-			if (MM_state & 0x01) {//no load:resume
+			if (MM_state & 0x01) {//no load:new
+				mm_newGame();
+			} else {//history
 				MM_state = 0x04;
 				MM_counter = MM_count;
 				gShadeEnable = 0;
-				menu_l3_mastermind_k6(NULL);
-			} else {
-				mm_newGame();
+				mm_keyProcesser(3);
 			}
 		}
 
 		return;
 	case 0x0C://select input number digit
 		if (!key) {//back - menu
-			mm_writeBuffer(0, 12); mm_writeBuffer(1, 13); mm_writeBuffer(2, 14); mm_writeBuffer(3, 15);
-			MM_counter = 0;
 			MM_state = 0x88;
+			MM_counter = 0;
+			HCMS29xx_VirtualBuffer_SetShadePattern(gVirtualBuffer, 4, 0x1);//except 1 gray
+			mm_writeBuffer(0, 12); mm_writeBuffer(1, 13); mm_writeBuffer(2, 14); mm_writeBuffer(3, 15);
 		} else if (key & 0x2) {//selc
 			mm_itemselector(key, 3);
 		} else {//ok - changenum
-			//save old digit
-			MM_counter = (((MM_query[MM_count] >> ((MM_state & 0x03) << 2)) & 0xF) << 8) | (MM_counter & 0x00FF);
+				//save old digit
+			MM_counter = (((MM_query[MM_count] >> ((MM_state & 0x03) << 2)) & 0xF) << 12);// | (MM_counter & 0x0FFF);
 			//jmp
 			MM_state = (MM_state & 0x03) | 0x80;
 		}
 		return;
 	case 0x80://(blinking)input number
 		if (key & 0x2) {//rebuilded: add/sub 1
-			//num = (num + ((key ^ 3) ? 1 : 9)) % 10;
-
-			//query[count] = (query[count] & (~(uint16_t)(0xF << ((state & 0x03) << 2)))) | (((((query[count] >> ((state & 0x03) << 2)) & 0xF) + ((key ^ 3) ? 1 : 9)) % 10) << ((state & 0x03) << 2));
-
+			
 			uint8_t movebits = (MM_state & 0x03) << 2;
-			uint8_t num = MM_query[MM_count] & (0xF << movebits);//get the num
+			uint16_t num = MM_query[MM_count] & (0xF << movebits);//get the num
 			MM_query[MM_count] ^= num;//delete old num
-			num = ((num >> movebits + ((key ^ 3) ? 1 : 9)) % 10) << movebits;//change the num
+			num = (((num >> movebits) + ((key ^ 3) ? 1 : 9)) % 10) << movebits;//change the num
 			MM_query[MM_count] ^= num;//restore num
 
 			MM_counter = 0xFFFF;
 			menu_l3_mastermind_refresh(NULL);//force refresh
 		} else {
 			if (!key) {//back - cancel
-				//restore old digit
-				MM_query[MM_count] = (MM_query[MM_count] & (~(uint16_t)(0xF << ((MM_state & 0x03) << 2)))) | ((MM_counter >> 8) << ((MM_state & 0x03) << 2));
+					   //restore old digit
+				MM_query[MM_count] = (MM_query[MM_count] & (~(uint16_t)(0xF << ((MM_state & 0x03) << 2)))) | ((MM_counter >> 12) << ((MM_state & 0x03) << 2));
 			}
 			MM_counter = 0xFFFF;
 			menu_l3_mastermind_refresh(NULL);//stop blinking chars
-			//jmp
+											 //jmp
 			MM_state = (MM_state & 0x03) | 0x0C;
 		}
 		return;
 	case 0x88://(blinking) hist/ok/reset/exit (game menu)
 		if (!key) {//back - selectdigit
-			mm_showNumbers(MM_query[MM_count], 0);
-			HCMS29xx_VirtualBuffer_SetShadePattern(gVirtualBuffer, 4, 0xE);//except 1 gray
-			MM_counter = 0;
 			MM_state = 0x0C;
+			MM_counter = 0;
+			mm_showNumbers(MM_query[MM_count], 0);
+			HCMS29xx_VirtualBuffer_SetShadePattern(gVirtualBuffer, 4, 0x1);//except 1 gray
 		} else if (key & 0x2) {
 			mm_itemselector(key, 3);
 		} else {
 			switch (MM_state) {
 			case 0x89://ok - guess!
-				//TODO check legal
+
+				if (!mm_checkValid(MM_query[MM_count])) {
+					mm_keyProcesser(0);
+					return;
+				}
+
 				MM_count++;
 				MM_query[MM_count] = 0;
 			case 0x88://hist
+				if (!MM_count) return; //no hist
 				MM_state = 0x04;
 				MM_counter = MM_count;
 				gShadeEnable = 0;
-				menu_l3_mastermind_k6(NULL);//force display
+				mm_keyProcesser(2);//force display
+				//menu_l3_mastermind_k3(NULL);
 				return;
 			case 0x8A://reset
-				mm_newGame();
+				MM_state = 0xA2;
+				MM_counter = 0;
+				HCMS29xx_VirtualBuffer_StringBuilder("N?", 2, gVirtualBuffer);
+				mm_writeBuffer(2, 13); mm_writeBuffer(3, 15);
+				HCMS29xx_VirtualBuffer_SetShadePattern(gVirtualBuffer, 4, 0x7);//hl selection
+				//mm_newGame();
 				return;
 			case 0x8B://exit
 				currentMenu = menu_enter(currentMenu, &menu_l2_apps, NULL, NULL);
-				return;
+				//return;
 			default:;
 			}
 		}
@@ -336,41 +329,43 @@ void mm_keyProcesser(uint8_t key) {
 			mm_showNumbers(MM_query[MM_counter], mm_getRet(MM_query[MM_counter]));
 		} else {//resume
 			//chk win/lost
-			if (mm_getRet(MM_query[MM_count]) ^ 0x40) {//win
+			if (!(mm_getRet(MM_query[MM_count - 1]) ^ 0x40)) {//win
 				MM_state = 0xAC;
-				gShadeEnable = 0;
-				HCMS29xx_VirtualBuffer_StringBuilder("Win!", 4, gVirtualBuffer);
+				MM_counter = 0xFFFF;
 				MM_count = 0x80;
+				//gShadeEnable = 0;
+				//HCMS29xx_VirtualBuffer_StringBuilder("Win!", 4, gVirtualBuffer);
 			} else if (MM_count >= MM_MAX_QUERY_COUNT) {//lose
 				MM_state = 0xBC;
-				gShadeEnable = 0;
-				HCMS29xx_VirtualBuffer_StringBuilder("Lose", 4, gVirtualBuffer);
-				MM_count = -1;
+				MM_counter = 0xFFFF;
+				MM_count = 0x80;
+				//gShadeEnable = 0;
+				//HCMS29xx_VirtualBuffer_StringBuilder("Lose", 4, gVirtualBuffer);
 			} else {//continue
+				MM_state = 0x0C; 
 				gShadeEnable = 1;
 				mm_showNumbers(MM_query[MM_count], 0);
-				HCMS29xx_VirtualBuffer_SetShadePattern(gVirtualBuffer, 4, 0xE);//except 1 gray
-				MM_counter = 0;
-				MM_state = 0x0C;
+				HCMS29xx_VirtualBuffer_SetShadePattern(gVirtualBuffer, 4, 0x1);//except 1 gray
+				//MM_counter = 0;
+				
 			}
 		}
 		return;
 	case 0xBC://Lose
-		if (key ^ 1) {
-			//goto showfailanswer
-			mm_showNumbers(MM_answer, 0);
-			MM_state = 0x08;
-		}
-		return; 
+		//goto showfailanswer
+		MM_state = 0x08;
+		mm_showNumbers(MM_answer, 0);
+		
+		return;
 	case 0xAC: case 0x08://Win/Lost+answer
-		if (key ^ 1) {
-			//goto querynew
-			MM_state = 0xA6;
-			HCMS29xx_VirtualBuffer_StringBuilder("N?", 2, gVirtualBuffer);
-			mm_writeBuffer(2, 13); mm_writeBuffer(3, 15);
-			MM_counter = 0;
-			gShadeEnable = 1;
-		}
+		//goto querynew
+		MM_state = 0xA6;
+		MM_counter = 0;
+		gShadeEnable = 1;
+		HCMS29xx_VirtualBuffer_StringBuilder("N?", 2, gVirtualBuffer);
+		mm_writeBuffer(2, 13); mm_writeBuffer(3, 15);
+		HCMS29xx_VirtualBuffer_SetShadePattern(gVirtualBuffer, 4, 0x7);
+		
 		return;
 	case 0xA4://(blinking) new?yn
 		if (key & 0x2) {
@@ -381,6 +376,19 @@ void mm_keyProcesser(uint8_t key) {
 			mm_newGame();
 		}
 		return;
+	case 0xA0://(blinking) new?yn(back)
+		if (key & 0x2) {
+			mm_itemselector(key, 1);
+		} else if ((MM_state ^ 0xA2) || !key) {//selected = exit or keyback
+			//back to game
+			MM_state = 0x0C; 
+			mm_showNumbers(MM_query[MM_count], 0);
+			HCMS29xx_VirtualBuffer_SetShadePattern(gVirtualBuffer, 4, 0x1);//except 1 gray
+			//MM_counter = 0;
+		} else {//ok - newgame
+			mm_newGame();
+		}
+		//return;
 	default:;
 	}
 }
@@ -399,43 +407,42 @@ void mm_writeBuffer_noErase(uint8_t charpos, uint8_t charindex) {
 
 void mm_itemselector(uint8_t key, uint8_t range) {
 	//range 1/3 only
-
 	MM_counter = 0xFFFF;
 	menu_l3_mastermind_refresh(NULL);//stop blinking chars
-	//k=2(-) 3(+)
+									 //k=2(-) 3(+)
 	MM_state = (MM_state & (0xFF ^ range)) | ((MM_state + ((key ^ 3) ? 1 : -1)) & range);
-	HCMS29xx_VirtualBuffer_SetShadePattern(gVirtualBuffer, 4, 0xF ^ (1 << (MM_state & 0x03)));
+	HCMS29xx_VirtualBuffer_SetShadePattern(gVirtualBuffer, 4, (1 << (MM_state & 0x03)) | ((range ^ 3) ? 0x03 : 0x00));
 }
 
 void mm_newGame(void) {
-	//新游戏，刷新屏幕，初始化
+	//newgame, refresh screen, init
 	MM_state = 0x7F;//disable interrupt
 	MM_count = 0;
-	HAL_RTC_GetTime(&hrtc, &gtime, RTC_FORMAT_BIN);
-	HAL_RTC_GetDate(&hrtc, &gdate, RTC_FORMAT_BIN);
-	uint32_t seed = 0;//TODO generate seed
+	gShadeEnable = 1;
+
+	uint32_t seed = HAL_GetTick();//generate seed
 	do {
 		MM_answer = 0;
 		for (uint8_t i = 0; i < 4; i++) {
 			do {
-				seed = (uint32_t)(907633515 + seed * 196314165);
+				seed = (uint32_t)(907633515U + seed * 196314165U);
 			} while ((seed >> 28) >= 10);
 			MM_answer |= (seed >> 28) << (4 * i);
 		}
-	} while (mm_checkInvalid(MM_answer));
-	gShadeEnable = 1;
+	} while (!mm_checkValid(MM_answer));
 	MM_query[0] = 0;
+	//mm_showNumbers(MM_answer, 0);
 	mm_showNumbers(0, 0);
-	HCMS29xx_VirtualBuffer_SetShadePattern(gVirtualBuffer, 4, 0xE);//except 1 gray
-	MM_counter = 0;
+	HCMS29xx_VirtualBuffer_SetShadePattern(gVirtualBuffer, 4, 0x1);//except 1 gray
+	//MM_counter = 0;
 	MM_state = 0x0C;
 }
 
-void mm_showNumbers(uint8_t number, uint8_t ret) {
+void mm_showNumbers(uint16_t number, uint8_t ret) {
 	mm_writeBuffer(0, number & 0xF);
 	mm_writeBuffer(1, (number >> 4) & 0xF);
 	mm_writeBuffer(2, (number >> 8) & 0xF);
-	mm_writeBuffer(3, number >> 16);
+	mm_writeBuffer(3, number >> 12);
 	uint8_t i;
 	for (i = 0; i < (ret & 0x0F); i++) {
 		mm_writeBuffer_noErase(i, 10);

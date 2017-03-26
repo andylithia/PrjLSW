@@ -17,8 +17,8 @@ extern menu_t* currentMenu;
 extern menu_t menu_l1_time;
 
 extern menu_t menu_l3_RPN;
-extern menu_t menu_l3_config;
 extern menu_t menu_l3_mastermind;
+extern menu_t menu_l3_config;
 /*
 extern menu_t menu_l3_config;
 extern menu_t menu_l3_stimer;
