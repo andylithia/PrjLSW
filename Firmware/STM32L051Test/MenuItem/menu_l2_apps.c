@@ -17,6 +17,7 @@ extern menu_t* currentMenu;
 extern menu_t menu_l1_time;
 
 extern menu_t menu_l3_RPN;
+extern menu_t menu_l3_mastermind;
 extern menu_t menu_l3_config;
 /*
 extern menu_t menu_l3_config;
@@ -26,6 +27,7 @@ extern menu_t menu_l3_sgen;
 
 appEntry_t entryList[]={
 	{"RPN Calc", 2, &menu_l3_RPN},
+	{"MstrMind", 2, &menu_l3_mastermind},
 	{"StopTimr", 2 ,NULL},
 	{"SignGen ", 2, NULL},
 	{"NoteView", 2, NULL},

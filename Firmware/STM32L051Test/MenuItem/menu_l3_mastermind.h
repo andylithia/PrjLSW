@@ -11,14 +11,14 @@
 
 //void decodeData(uint16_t compressed, uint8_t out);
 
-uint8_t mm_checkInvalid(uint16_t number);
+uint8_t mm_checkValid(uint16_t number);
 uint8_t mm_getRet(uint16_t number);
 void mm_keyProcesser(uint8_t key);
 void mm_writeBuffer(uint8_t charpos, uint8_t charindex);
 void mm_writeBuffer_noErase(uint8_t charpos, uint8_t charindex);
 void mm_itemselector(uint8_t key, uint8_t range);
 void mm_newGame(void);
-void mm_showNumbers(uint8_t number, uint8_t ret);
+void mm_showNumbers(uint16_t number, uint8_t ret);
 
 void menu_l3_mastermind_enter(void* arg);
 void menu_l3_mastermind_exit(void* arg);
